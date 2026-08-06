@@ -70,6 +70,12 @@ class CrossPointSettings {
     PROGRESS_BAR_THICK = 2,
     STATUS_BAR_PROGRESS_BAR_THICKNESS_COUNT
   };
+  enum STATUS_BAR_PROGRESS_BAR_SPECIFICITY {
+    PROGRESS_WHOLE_NUMBER = 0,
+    PROGRESS_SINGLE_DECIMAL = 1,
+    PROGRESS_TWO_DECIMAL = 2,
+    STATUS_BAR_PROGRESS_BAR_SPECIFICITY_COUNT
+  };
   enum STATUS_BAR_TITLE { BOOK_TITLE = 0, CHAPTER_TITLE = 1, HIDE_TITLE = 2, STATUS_BAR_TITLE_COUNT };
   enum STATUS_BAR_TIME_LEFT {
     TIME_LEFT_HIDE = 0,
@@ -314,6 +320,7 @@ class CrossPointSettings {
   uint8_t statusBarBookProgressPercentage = 1;
   uint8_t stablePageNumbers = 0;
   uint8_t statusBarProgressBar = HIDE_PROGRESS;
+  uint8_t statusBarProgressBarSpecificity = PROGRESS_WHOLE_NUMBER;
   uint8_t statusBarProgressBarThickness = PROGRESS_BAR_NORMAL;
   uint8_t statusBarTitle = CHAPTER_TITLE;
   uint8_t statusBarTimeLeft = TIME_LEFT_HIDE;

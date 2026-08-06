@@ -629,6 +629,10 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           StrId::STR_CUSTOMISE_STATUS_BAR)
             .withEnumRawValues({CrossPointSettings::HIDE_PROGRESS, CrossPointSettings::BOOK_PROGRESS,
                                 CrossPointSettings::CHAPTER_PROGRESS}));
+    add(SettingInfo::Enum(
+        StrId::STR_PROGRESS_BAR_SPECIFICITY, &CrossPointSettings::statusBarProgressBarSpecificity,
+        {StrId::STR_PROGRESS_WHOLE_NUMBER, StrId::STR_PROGRESS_SINGLE_DECIMAL, StrId::STR_PROGRESS_TWO_DECIMAL},
+        "statusBarProgressBarSpecificity", StrId::STR_CUSTOMISE_STATUS_BAR));
     add(SettingInfo::Enum(StrId::STR_PROGRESS_BAR_THICKNESS, &CrossPointSettings::statusBarProgressBarThickness,
                           {StrId::STR_PROGRESS_BAR_THIN, StrId::STR_PROGRESS_BAR_MEDIUM, StrId::STR_PROGRESS_BAR_THICK},
                           "statusBarProgressBarThickness", StrId::STR_CUSTOMISE_STATUS_BAR));

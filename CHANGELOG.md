@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Added
+
+- New **Progress Bar Specificity** status bar setting to round the book progress percentage to a whole number (default), one decimal (e.g. `12.1%`), or two decimals (e.g. `12.12%`).
+
 ## [v1.4.0.1] - 2026-07-28
 
 ### Added

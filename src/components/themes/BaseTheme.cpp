@@ -766,23 +766,37 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
   int progressTextWidth = 0;
 
   const bool showStablePageNumbers = SETTINGS.stablePageNumbers && stableCurrentPage > 0 && stablePageCount > 0;
+  // Format the book progress percentage according to the selected specificity.
+  const char* bookProgressFormat = "%.0f%%";
+  switch (SETTINGS.statusBarProgressBarSpecificity) {
+    case CrossPointSettings::STATUS_BAR_PROGRESS_BAR_SPECIFICITY::PROGRESS_SINGLE_DECIMAL:
+      bookProgressFormat = "%.1f%%";
+      break;
+    case CrossPointSettings::STATUS_BAR_PROGRESS_BAR_SPECIFICITY::PROGRESS_TWO_DECIMAL:
+      bookProgressFormat = "%.2f%%";
+      break;
+    default:
+      break;
+  }
+  char bookProgressStr[16];
+  snprintf(bookProgressStr, sizeof(bookProgressStr), bookProgressFormat, bookProgress);
   if (showProgress &&
       (SETTINGS.statusBarBookProgressPercentage || SETTINGS.statusBarChapterPageCount || showStablePageNumbers)) {
     // Right aligned text for progress counter
     char progressStr[48];
 
     if (SETTINGS.statusBarChapterPageCount && showStablePageNumbers && SETTINGS.statusBarBookProgressPercentage) {
-      snprintf(progressStr, sizeof(progressStr), "%d/%d  %d/%d  %.0f%%", currentPage, pageCount, stableCurrentPage,
-               stablePageCount, bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%d/%d  %d/%d  %s", currentPage, pageCount, stableCurrentPage,
+               stablePageCount, bookProgressStr);
     } else if (SETTINGS.statusBarChapterPageCount && showStablePageNumbers) {
       snprintf(progressStr, sizeof(progressStr), "%d/%d  %d/%d", currentPage, pageCount, stableCurrentPage,
                stablePageCount);
     } else if (SETTINGS.statusBarChapterPageCount && SETTINGS.statusBarBookProgressPercentage) {
-      snprintf(progressStr, sizeof(progressStr), "%d/%d  %.0f%%", currentPage, pageCount, bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%d/%d  %s", currentPage, pageCount, bookProgressStr);
     } else if (showStablePageNumbers && SETTINGS.statusBarBookProgressPercentage) {
-      snprintf(progressStr, sizeof(progressStr), "%d/%d  %.0f%%", stableCurrentPage, stablePageCount, bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%d/%d  %s", stableCurrentPage, stablePageCount, bookProgressStr);
     } else if (SETTINGS.statusBarBookProgressPercentage) {
-      snprintf(progressStr, sizeof(progressStr), "%.0f%%", bookProgress);
+      snprintf(progressStr, sizeof(progressStr), "%s", bookProgressStr);
     } else if (showStablePageNumbers) {
       snprintf(progressStr, sizeof(progressStr), "%d/%d", stableCurrentPage, stablePageCount);
     } else {
