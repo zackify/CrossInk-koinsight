@@ -21,6 +21,7 @@ enum MenuItem {
   ITEM_STABLE_PAGE_NUMBERS,
   ITEM_BOOK_PROGRESS_PERCENTAGE,
   ITEM_PROGRESS_BAR,
+  ITEM_PROGRESS_BAR_SPECIFICITY,
   ITEM_PROGRESS_BAR_THICKNESS,
   ITEM_TITLE,
   ITEM_TIME_LEFT,
@@ -34,6 +35,7 @@ const StrId menuNames[ITEM_COUNT] = {
     StrId::STR_STABLE_PAGE_NUMBERS,
     StrId::STR_BOOK_PROGRESS_PERCENTAGE,
     StrId::STR_PROGRESS_BAR,
+    StrId::STR_PROGRESS_BAR_SPECIFICITY,
     StrId::STR_PROGRESS_BAR_THICKNESS,
     StrId::STR_TITLE,
     StrId::STR_TIME_LEFT,
@@ -48,6 +50,10 @@ const uint8_t progressBarRawValues[PROGRESS_BAR_ITEMS] = {
     CrossPointSettings::STATUS_BAR_PROGRESS_BAR::BOOK_PROGRESS,
     CrossPointSettings::STATUS_BAR_PROGRESS_BAR::CHAPTER_PROGRESS,
 };
+
+constexpr int PROGRESS_BAR_SPECIFICITY_ITEMS = 3;
+const StrId progressBarSpecificityNames[PROGRESS_BAR_SPECIFICITY_ITEMS] = {
+    StrId::STR_PROGRESS_WHOLE_NUMBER, StrId::STR_PROGRESS_SINGLE_DECIMAL, StrId::STR_PROGRESS_TWO_DECIMAL};
 
 constexpr int PROGRESS_BAR_THICKNESS_ITEMS = 3;
 const StrId progressBarThicknessNames[PROGRESS_BAR_THICKNESS_ITEMS] = {
@@ -71,6 +77,8 @@ int optionCountForItem(const int item) {
   switch (item) {
     case ITEM_PROGRESS_BAR:
       return PROGRESS_BAR_ITEMS;
+    case ITEM_PROGRESS_BAR_SPECIFICITY:
+      return PROGRESS_BAR_SPECIFICITY_ITEMS;
     case ITEM_PROGRESS_BAR_THICKNESS:
       return PROGRESS_BAR_THICKNESS_ITEMS;
     case ITEM_TITLE:
@@ -88,6 +96,8 @@ StrId optionNameForItem(const int item, const int optionIndex) {
   switch (item) {
     case ITEM_PROGRESS_BAR:
       return progressBarNames[optionIndex];
+    case ITEM_PROGRESS_BAR_SPECIFICITY:
+      return progressBarSpecificityNames[optionIndex];
     case ITEM_PROGRESS_BAR_THICKNESS:
       return progressBarThicknessNames[optionIndex];
     case ITEM_TITLE:
@@ -118,6 +128,9 @@ uint8_t currentOptionIndexForItem(const int item) {
     case ITEM_PROGRESS_BAR:
       rawValue = SETTINGS.statusBarProgressBar;
       break;
+    case ITEM_PROGRESS_BAR_SPECIFICITY:
+      rawValue = SETTINGS.statusBarProgressBarSpecificity;
+      break;
     case ITEM_PROGRESS_BAR_THICKNESS:
       rawValue = SETTINGS.statusBarProgressBarThickness;
       break;
@@ -146,6 +159,9 @@ void setOptionIndexForItem(const int item, const uint8_t optionIndex) {
   switch (item) {
     case ITEM_PROGRESS_BAR:
       SETTINGS.statusBarProgressBar = rawValue;
+      break;
+    case ITEM_PROGRESS_BAR_SPECIFICITY:
+      SETTINGS.statusBarProgressBarSpecificity = rawValue;
       break;
     case ITEM_PROGRESS_BAR_THICKNESS:
       SETTINGS.statusBarProgressBarThickness = rawValue;
@@ -194,6 +210,11 @@ void StatusBarSettingsActivity::onEnter() {
   // Clamp statusBarProgressBar and statusBarTitle in case of corrupt/migrated data
   if (SETTINGS.statusBarProgressBar >= PROGRESS_BAR_ITEMS) {
     SETTINGS.statusBarProgressBar = CrossPointSettings::STATUS_BAR_PROGRESS_BAR::HIDE_PROGRESS;
+  }
+
+  if (SETTINGS.statusBarProgressBarSpecificity >= PROGRESS_BAR_SPECIFICITY_ITEMS) {
+    SETTINGS.statusBarProgressBarSpecificity =
+        CrossPointSettings::STATUS_BAR_PROGRESS_BAR_SPECIFICITY::PROGRESS_WHOLE_NUMBER;
   }
 
   if (SETTINGS.statusBarProgressBarThickness >= PROGRESS_BAR_THICKNESS_ITEMS) {

@@ -238,6 +238,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - Chapter Page Count - Show/Hide the current page in the chapter (ex: 5/25). Page count may change based on the font size and margins set.
   - Book Progress Percentage - Show/Hide the current percent progress in the book.
   - Progress Bar - Show/Hide a progress bar for either the book or chapter.
+  - Progress Bar Specificity - Set how many decimal places the book progress percentage shows (Whole Number, Single Decimal, or Two Decimal).
   - Progress Bar Thickness - Set the thickness of the progress bar
   - Title - Display the chapter or book title
   - Time Left - Display the estimated reading time left for the book or chapter
