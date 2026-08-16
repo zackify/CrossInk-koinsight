@@ -62,7 +62,8 @@ TEST(KoInsightEventLogCodec, RoundTripsEvent) {
 TEST(KoInsightEventLogCodec, RecordFitsDocumentedLayout) {
   EXPECT_EQ(KoInsightEventLog::RECORD_SIZE, 16u);
   EXPECT_EQ(KoInsightEventLog::HEADER_SIZE, 8u);
-  // A full log must stay small: it is read-modify-written on every change.
+  // A full log stays small: it is read-modify-written on every change, so it
+  // must never grow beyond a few tens of KB.
   EXPECT_LE(KoInsightEventLog::MAX_EVENTS * KoInsightEventLog::RECORD_SIZE + KoInsightEventLog::HEADER_SIZE,
-            8u * 1024u);
+            32u * 1024u);
 }

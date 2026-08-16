@@ -149,10 +149,11 @@ class EpubReaderActivity final : public Activity {
   uint32_t sessionPaceSampleSeconds = 0;
   uint16_t sessionPaceSampleCount = 0;
   uint32_t sessionReadingSeconds = 0;
-  // Per-page dwell events queued in RAM for KoInsight stats sync; flushed to
-  // the book's pending log in onExit(). Capped at KoInsightEventLog::MAX_EVENTS.
+  // Per-page dwell events queued in RAM for KoInsight stats sync. Flushed to
+  // the book's pending log whenever KOINSIGHT_SESSION_FLUSH_THRESHOLD is
+  // reached (bounds RAM: 256 events = 4KB) and again in onExit().
   std::vector<KoInsightPageEvent> koInsightSessionEvents;
-  bool koInsightQueueFullWarned = false;
+  static constexpr size_t KOINSIGHT_SESSION_FLUSH_THRESHOLD = 256;
   uint16_t lastAutoPageTurnIntervalSeconds = 0;
   bool bookHasCustomReaderSettings = false;
   bool bookHasAutoPageTurnInterval = false;
@@ -347,6 +348,7 @@ class EpubReaderActivity final : public Activity {
   bool currentPageReadingSecondsForStats(uint32_t& seconds, const char* source) const;
   void recordCurrentPageReadingTime(const char* source = "unknown");
   void queueKoInsightPageEvent(uint32_t seconds, const char* source);
+  void flushKoInsightSessionEvents();
   void recordForwardPagePaceSample(uint32_t seconds, const char* source);
   bool getSessionAveragePaceSeconds(uint16_t& avgSeconds) const;
   void recoverStoredPaceFromSession(const char* reason = "unknown");

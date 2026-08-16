@@ -1460,14 +1460,6 @@ void EpubReaderActivity::queueKoInsightPageEvent(const uint32_t seconds, const c
   if (!KOINSIGHT_STORE.getEnabled() || !epub || !section || seconds == 0) {
     return;
   }
-  if (koInsightSessionEvents.size() >= KoInsightEventLog::MAX_EVENTS) {
-    if (!koInsightQueueFullWarned) {
-      koInsightQueueFullWarned = true;
-      LOG_INF("KNS", "Session KoInsight queue full (%u); further page events this session will be dropped",
-              static_cast<unsigned>(KoInsightEventLog::MAX_EVENTS));
-    }
-    return;
-  }
   const time_t now = time(nullptr);
   if (now < 946684800) {  // before 2000-01-01: clock unset
     LOG_DBG("KNS", "Skipping KoInsight event (clock not set, source=%s)", source ? source : "unknown");
@@ -1508,9 +1500,26 @@ void EpubReaderActivity::queueKoInsightPageEvent(const uint32_t seconds, const c
   event.page = page;
   event.totalPages = totalPages;
   koInsightSessionEvents.push_back(event);
+  // Keep RAM bounded: flush the session buffer to the per-book queue file at
+  // the threshold, so long sessions / extended offline stretches accumulate
+  // up to KoInsightEventLog::MAX_EVENTS (2000) on disk without dropping or
+  // holding the whole queue in memory.
+  if (koInsightSessionEvents.size() >= KOINSIGHT_SESSION_FLUSH_THRESHOLD) {
+    flushKoInsightSessionEvents();
+  }
   LOG_DBG("KNS", "KoInsight event: page %lu/%lu, %lus dwell (source=%s)", static_cast<unsigned long>(event.page),
           static_cast<unsigned long>(event.totalPages), static_cast<unsigned long>(event.duration),
           source ? source : "unknown");
+}
+
+void EpubReaderActivity::flushKoInsightSessionEvents() {
+  if (koInsightSessionEvents.empty()) {
+    return;
+  }
+  if (!KoInsightEventLog::appendAll(epub->getCachePath(), koInsightSessionEvents)) {
+    LOG_ERR("KNS", "Failed to persist KoInsight page events; they are lost");
+  }
+  koInsightSessionEvents.clear();
 }
 
 void EpubReaderActivity::recordForwardPagePaceSample(uint32_t seconds, const char* source) {
@@ -2226,14 +2235,7 @@ void EpubReaderActivity::onExit() {
       stats.save(epub->getCachePath());
       // Persist any KoInsight page events collected this session. Runs inside
       // the stats-tracking block: no stats tracking, no stats upload queue.
-      if (!koInsightSessionEvents.empty()) {
-        LOG_DBG("KNS", "Flushing %u KoInsight page events for %s", static_cast<unsigned>(koInsightSessionEvents.size()),
-                epub->getTitle().c_str());
-        if (!KoInsightEventLog::appendAll(epub->getCachePath(), koInsightSessionEvents)) {
-          LOG_ERR("KNS", "Failed to persist KoInsight page events; they are lost");
-        }
-        koInsightSessionEvents.clear();
-      }
+      flushKoInsightSessionEvents();
     }
     globalStats.save();
   }

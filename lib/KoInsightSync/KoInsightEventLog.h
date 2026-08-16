@@ -19,7 +19,7 @@
  *                     totalPages u32 [12-15] — spine page count (device pagination)
  *
  * The whole file is read-modify-written on change (HalStorage's write mode
- * truncates; there is no append mode). Sizes are tiny: 256 records = 4KB.
+ * truncates; there is no append mode). Sizes are small: 2000 records = 32KB.
  */
 struct KoInsightPageEvent {
   uint32_t startTime;
@@ -30,7 +30,7 @@ struct KoInsightPageEvent {
 
 class KoInsightEventLog {
  public:
-  static constexpr size_t MAX_EVENTS = 256;
+  static constexpr size_t MAX_EVENTS = 2000;
   static constexpr const char* FILE_NAME = "koinsight_pending.bin";
 
   // Byte-level codec — pure functions, unit-tested on host.

@@ -19,9 +19,10 @@ struct KoInsightSyncResult {
 
 class KoInsightUpload {
  public:
-  // Batches per call, so a long-offline backlog drains over a few syncs
-  // without stalling the progress-sync UX on the radio for minutes.
-  static constexpr int MAX_BATCHES_PER_RUN = 4;
+  // Batches per call (each ≤ KoInsightClient::BATCH_SIZE = 64 events), so a
+  // long-offline backlog (up to KoInsightEventLog::MAX_EVENTS = 2000) drains
+  // over a few syncs without stalling the progress-sync UX on the radio.
+  static constexpr int MAX_BATCHES_PER_RUN = 8;
 
   /**
    * @param baseUrl   Effective server URL (settings-resolved; no trailing slash)
