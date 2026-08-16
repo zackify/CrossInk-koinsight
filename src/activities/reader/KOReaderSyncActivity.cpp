@@ -10,13 +10,17 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <ctime>
 
+#include "BookReadingStats.h"
 #include "CrossPointSettings.h"
 #include "Epub/Section.h"
 #include "EpubReaderUtils.h"
 #include "HalClock.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderDocumentId.h"
+#include "KoInsightSettings.h"
+#include "KoInsightUpload.h"
 #include "MappedInputManager.h"
 #include "ReaderUtils.h"
 #include "SdCardFontSystem.h"
@@ -179,12 +183,81 @@ bool KOReaderSyncActivity::smartSyncEnabled() const {
 void KOReaderSyncActivity::markAutoReturn() { autoReturnAt = millis() + AUTO_RETURN_DELAY_MS; }
 
 void KOReaderSyncActivity::completeAlreadySynced() {
+  uploadKoInsightStats();
   {
     RenderLock lock(*this);
     state = SYNC_COMPLETE;
   }
   markAutoReturn();
   requestUpdate(true);
+}
+
+// Piggybacked KoInsight stats upload: pushes this book's queued page-stat
+// events to the configured KoInsight server while WiFi is still up. Called
+// from the successful progress-sync paths (upload, apply, already-synced).
+// Never affects the progress-sync outcome — failures are logged only, and the
+// queue stays for the next sync.
+void KOReaderSyncActivity::uploadKoInsightStats() {
+  if (koInsightAttempted) {
+    return;
+  }
+  koInsightAttempted = true;
+  if (!KOINSIGHT_STORE.getEnabled()) {
+    return;
+  }
+
+  const std::string baseUrl = KOINSIGHT_STORE.effectiveServerUrl(KOREADER_STORE.getBaseUrl());
+  if (baseUrl.empty()) {
+    LOG_ERR("KNS", "KoInsight stats sync enabled but no server URL is configured; skipping");
+    return;
+  }
+
+  const bool alreadyLoaded = epub != nullptr;
+  ensureEpubLoaded();
+  if (!epub) {
+    LOG_ERR("KNS", "KoInsight stats sync skipped: epub unavailable");
+    return;
+  }
+
+  const std::string cachePath = epub->getCachePath();
+  if (KoInsightEventLog::count(cachePath) == 0) {
+    LOG_DBG("KNS", "KoInsight stats sync: no pending page events for this book");
+    if (!alreadyLoaded) epub.reset();
+    return;
+  }
+
+  // Always identify the book by its binary partial MD5 for stats: KOReader's
+  // statistics database keys books by content hash, so this unifies CrossInk
+  // and KOReader rows into one book in KoInsight regardless of the kosync
+  // document-matching setting.
+  const std::string md5 = KOReaderDocumentId::calculate(epubPath);
+  if (md5.empty()) {
+    LOG_ERR("KNS", "KoInsight stats sync skipped: could not hash %s", epubPath.c_str());
+    if (!alreadyLoaded) epub.reset();
+    return;
+  }
+
+  const BookReadingStats bookStats = BookReadingStats::load(cachePath);
+  KoInsightBookPayload book;
+  book.md5 = md5;
+  book.title = epub->getTitle();
+  book.authors = epub->getAuthor();
+  const time_t now = time(nullptr);
+  book.lastOpen = now >= 946684800 ? static_cast<uint32_t>(now) : 0;
+  book.totalReadTime = bookStats.totalReadingSeconds;
+  book.totalReadPages = bookStats.totalPagesTurned;
+
+  const std::string deviceId = KoInsightClient::deviceId();
+  LOG_INF("KNS", "KoInsight stats sync starting for \"%s\" (md5 %.8s..., device %s)", book.title.c_str(), md5.c_str(),
+          deviceId.c_str());
+  const KoInsightSyncResult result =
+      KoInsightUpload::syncBookStats(baseUrl, deviceId, CROSSINK_FIRMWARE_DEVICE_TYPE, book, cachePath);
+  if (result.errorCode != 0) {
+    LOG_ERR("KNS", "KoInsight stats sync failed: %s",
+            KoInsightClient::errorString(static_cast<KoInsightClient::Error>(result.errorCode)).c_str());
+  }
+
+  if (!alreadyLoaded) epub.reset();
 }
 
 void KOReaderSyncActivity::onWifiSelectionComplete(const bool success) {
@@ -433,6 +506,7 @@ void KOReaderSyncActivity::performSync() {
       return;
     }
 
+    uploadKoInsightStats();
     saveProgressAndReturn(remotePosition);
     return;
   }
@@ -520,6 +594,11 @@ void KOReaderSyncActivity::performUpload() {
   epub.reset();
 
   const auto result = KOReaderSyncClient::updateProgress(progress);
+
+  // Piggyback the KoInsight stats upload while the radio is still up.
+  if (result == KOReaderSyncClient::OK) {
+    uploadKoInsightStats();
+  }
 
   // Drop the radio while user reads the result; full teardown happens at silent reboot.
   wifiOff();
@@ -761,6 +840,7 @@ void KOReaderSyncActivity::loop() {
   if (state == SHOWING_RESULT) {
     auto chooseSelected = [this] {
       if (selectedOption == 0) {
+        uploadKoInsightStats();
         saveProgressAndReturn(remotePosition);
       } else if (selectedOption == 1) {
         performUpload();

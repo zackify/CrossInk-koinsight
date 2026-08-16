@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "KOReaderCredentialStore.h"
+#include "KoInsightSettings.h"
 #include "MappedInputManager.h"
 #include "SilentRestart.h"
 #include "activities/util/KeyboardEntryActivity.h"
@@ -18,10 +19,11 @@
 namespace fui = freeink::ui;
 
 namespace {
-constexpr int MENU_ITEMS = 8;
+constexpr int MENU_ITEMS = 10;
 const StrId menuNames[MENU_ITEMS] = {StrId::STR_USERNAME,          StrId::STR_PASSWORD,      StrId::STR_SYNC_SERVER_URL,
                                      StrId::STR_DOCUMENT_MATCHING, StrId::STR_SEND_METADATA, StrId::STR_SYNC_BEHAVIOR,
-                                     StrId::STR_SIGN_UP,           StrId::STR_AUTHENTICATE};
+                                     StrId::STR_SIGN_UP,           StrId::STR_AUTHENTICATE,  StrId::STR_KOINSIGHT_STATS,
+                                     StrId::STR_KOINSIGHT_URL};
 constexpr fui::ActionId ACTION_ROW = 1;
 }  // namespace
 
@@ -170,6 +172,27 @@ void KOReaderSettingsActivity::handleSelection() {
       return;
     }
     silentRestartToNetwork(NetworkBootTarget::KOREADER_AUTH);
+  } else if (selectedIndex == 8) {
+    // KoInsight Stats Sync - toggle on/off
+    KOINSIGHT_STORE.setEnabled(!KOINSIGHT_STORE.getEnabled());
+    KOINSIGHT_STORE.saveToFile();
+    requestUpdate();
+  } else if (selectedIndex == 9) {
+    // KoInsight Server URL - empty means "use the KOReader sync server".
+    // Prefill with https:// if empty to save typing.
+    const std::string currentUrl = KOINSIGHT_STORE.getServerUrl();
+    const std::string prefillUrl = currentUrl.empty() ? "https://" : currentUrl;
+    startActivityForResult(std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_KOINSIGHT_URL),
+                                                                   prefillUrl, 128, InputType::Url),
+                           [this](const ActivityResult& result) {
+                             if (!result.isCancelled) {
+                               const auto& kb = std::get<KeyboardResult>(result.data);
+                               const std::string urlToSave =
+                                   (kb.text == "https://" || kb.text == "http://") ? "" : kb.text;
+                               KOINSIGHT_STORE.setServerUrl(urlToSave);
+                               KOINSIGHT_STORE.saveToFile();
+                             }
+                           });
   }
 }
 
@@ -211,6 +234,19 @@ void KOReaderSettingsActivity::buildListScreen(UiApp::ScreenType& screen) {
     } else if (i == 5) {
       values[i] =
           KOREADER_STORE.getSyncBehavior() == KOReaderSyncBehavior::SMART ? tr(STR_SMART_SYNC) : tr(STR_ASK_EVERY_TIME);
+    } else if (i == 8) {
+      values[i] = KOINSIGHT_STORE.getEnabled() ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
+    } else if (i == 9) {
+      values[i] = KOINSIGHT_STORE.getServerUrl();
+      if (values[i].empty()) {
+        // Empty = stats go to the KOReader sync server (KoInsight serves both APIs)
+        std::string defaultUrl = KOREADER_STORE.getBaseUrl();
+        const auto schemeEnd = defaultUrl.find("://");
+        if (schemeEnd != std::string::npos) {
+          defaultUrl.erase(0, schemeEnd + 3);
+        }
+        values[i] = std::string(tr(STR_DEFAULT_VALUE)) + ": " + defaultUrl;
+      }
     } else {
       values[i] = KOREADER_STORE.hasCredentials() ? "" : std::string("[") + tr(STR_SET_CREDENTIALS_FIRST) + "]";
     }

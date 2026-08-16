@@ -18,6 +18,7 @@ Welcome to CrossInk, a personal fork of CrossPoint Reader.
 - [Dictionary](./dictionary.md)
 - [Controls](./controls.md)
 - [Reading Stats Sync](./reading-stats-sync.md)
+- [KoInsight Stats Sync](./koinsight-stats-sync.md)
 - [Nearby File Transfer](./nearby-file-transfer.md)
 - [Nearby Position Sync](./nearby-position-sync.md)
 - [EPUB Indexing Methods](./epub-indexing.md)

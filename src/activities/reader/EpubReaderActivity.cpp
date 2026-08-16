@@ -17,6 +17,7 @@
 #include <array>
 #include <cctype>
 #include <cstring>
+#include <ctime>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -39,6 +40,7 @@
 #include "GlobalActions.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
+#include "KoInsightSettings.h"
 #include "LookedUpWordsActivity.h"
 #include "MappedInputManager.h"
 #include "NearbyBookPositionSyncActivity.h"
@@ -1445,8 +1447,70 @@ void EpubReaderActivity::recordCurrentPageReadingTime(const char* source) {
   uint32_t seconds = 0;
   if (currentPageReadingSecondsForStats(seconds, source)) {
     sessionReadingSeconds = sessionReadingSeconds > UINT32_MAX - seconds ? UINT32_MAX : sessionReadingSeconds + seconds;
+    queueKoInsightPageEvent(seconds, source);
   }
   pageShownAtMs = 0UL;
+}
+
+// Queues one KOReader-style page-stat event for the KoInsight upload. Held in
+// RAM for the session and persisted by onExit(); events with no wall clock
+// (device never time-synced) are dropped — KoInsight keys stats by start_time,
+// so a bogus epoch would be worse than a gap.
+void EpubReaderActivity::queueKoInsightPageEvent(const uint32_t seconds, const char* source) {
+  if (!KOINSIGHT_STORE.getEnabled() || !epub || !section || seconds == 0) {
+    return;
+  }
+  if (koInsightSessionEvents.size() >= KoInsightEventLog::MAX_EVENTS) {
+    if (!koInsightQueueFullWarned) {
+      koInsightQueueFullWarned = true;
+      LOG_INF("KNS", "Session KoInsight queue full (%u); further page events this session will be dropped",
+              static_cast<unsigned>(KoInsightEventLog::MAX_EVENTS));
+    }
+    return;
+  }
+  const time_t now = time(nullptr);
+  if (now < 946684800) {  // before 2000-01-01: clock unset
+    LOG_DBG("KNS", "Skipping KoInsight event (clock not set, source=%s)", source ? source : "unknown");
+    return;
+  }
+  const int spineTotal = section->estimatedTotalPages();
+  uint32_t page = static_cast<uint32_t>(std::max(0, section->currentPage) + 1);
+  uint32_t totalPages = static_cast<uint32_t>(std::max(1, spineTotal));
+
+  // Prefer the book's stable reference pagination (KOReader-style word-count
+  // pages) so `page`/`total_pages` reflect the WHOLE book, not just the
+  // current spine — KoInsight normalizes pages-read by total_pages, so it
+  // must be the full-book count to stay proportional.
+  const float readFraction =
+      spineTotal > 0 ? static_cast<float>(std::max(0, section->currentPage)) / static_cast<float>(spineTotal) : 0.0f;
+  uint32_t refPage = 0;
+  uint32_t refPageCount = 0;
+  if (epub->hasStablePageNumbers() &&
+      epub->resolveReferencePage(currentSpineIndex, readFraction, refPage, refPageCount) && refPageCount > 0) {
+    page = refPage;
+    totalPages = refPageCount;
+  } else {
+    // Fallback: estimate whole-book pages from this spine's share of the book.
+    const float spineStart = epub->calculateProgress(currentSpineIndex, 0.0f);
+    const float spineEnd = epub->calculateProgress(currentSpineIndex, 1.0f);
+    const float span = spineEnd - spineStart;
+    if (span > 0.0001f) {
+      const float estimated = static_cast<float>(spineTotal) / span;
+      if (estimated > 1.0f) {
+        totalPages = static_cast<uint32_t>(estimated + 0.5f);
+      }
+    }
+  }
+
+  KoInsightPageEvent event;
+  event.startTime = static_cast<uint32_t>(now) - seconds;
+  event.duration = seconds;
+  event.page = page;
+  event.totalPages = totalPages;
+  koInsightSessionEvents.push_back(event);
+  LOG_DBG("KNS", "KoInsight event: page %lu/%lu, %lus dwell (source=%s)", static_cast<unsigned long>(event.page),
+          static_cast<unsigned long>(event.totalPages), static_cast<unsigned long>(event.duration),
+          source ? source : "unknown");
 }
 
 void EpubReaderActivity::recordForwardPagePaceSample(uint32_t seconds, const char* source) {
@@ -2160,6 +2224,16 @@ void EpubReaderActivity::onExit() {
       recoverStoredPaceFromSession("reader_exit");
       refreshCachedTimeLeftEstimate();
       stats.save(epub->getCachePath());
+      // Persist any KoInsight page events collected this session. Runs inside
+      // the stats-tracking block: no stats tracking, no stats upload queue.
+      if (!koInsightSessionEvents.empty()) {
+        LOG_DBG("KNS", "Flushing %u KoInsight page events for %s", static_cast<unsigned>(koInsightSessionEvents.size()),
+                epub->getTitle().c_str());
+        if (!KoInsightEventLog::appendAll(epub->getCachePath(), koInsightSessionEvents)) {
+          LOG_ERR("KNS", "Failed to persist KoInsight page events; they are lost");
+        }
+        koInsightSessionEvents.clear();
+      }
     }
     globalStats.save();
   }

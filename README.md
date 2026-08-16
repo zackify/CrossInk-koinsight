@@ -1,5 +1,16 @@
 > **This is a personal fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)** with a focus on improved fonts and minimal reading stats.
 
+## ✨ New: KoInsight Reading Stats Sync
+
+This fork can upload your reading statistics straight to a self-hosted [KoInsight](https://github.com/Ko-Insight/KoInsight) dashboard — the same one KOReader uses — so reading time on your Xteink shows up right next to your KOReader stats, combined per book.
+
+- Uploads real per-page reading events (page, dwell time, book-wide page numbers) through KoInsight's KOReader-plugin import API — **no extra server-side software**.
+- Piggybacks on the existing KOReader progress sync: when you sync progress, stats ride along while WiFi is up.
+- Books unify with KOReader by content hash (partial MD5), so the same ebook read on both devices combines into one book, with per-device stats that never clobber each other.
+- On-device setup in **Settings → KOReader Sync → "KoInsight Stats Sync"** (toggle + server URL), or pre-provision `/.crosspoint/koinsight.json` on the SD card.
+
+See [KoInsight Stats Sync](./docs/koinsight-stats-sync.md) for full details.
+
 ### Supported Devices
 
 - Xteink X3
@@ -46,6 +57,7 @@ My goal with this fork was to maintain the core Crosspoint firmware while integr
 - In-book menu to quickly adjust reader options without having to exit the book.
 - Reading stats: total books read, total reading time, number of sessions, pages turned, average session time, pages turned per minute. You can also set your reading stats as your sleep screen.
 - All-time reading stats [syncing](./docs/reading-stats-sync.md) between two CrossInk devices.
+- [KoInsight](https://github.com/Ko-Insight/KoInsight) reading-stats sync: per-page stats upload to your KoInsight server to combine with KOReader.
 - Reading [progress sync](./docs/nearby-position-sync.md) between two CrossInk devices.
 - Added customizable Auto Page Turn Interval (anything between 5-120 seconds).
 - Added ability to view Recent Books as a 3x3 grid view.

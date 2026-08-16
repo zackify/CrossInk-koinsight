@@ -10,12 +10,14 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "BookReadingStats.h"
 #include "BookmarkStore.h"
 #include "EndOfBookOptions.h"
 #include "EpubReaderMenuActivity.h"
 #include "GlobalReadingStats.h"
+#include "KoInsightEventLog.h"
 #include "ReaderProgressSaveDebouncer.h"
 #include "activities/Activity.h"
 
@@ -147,6 +149,10 @@ class EpubReaderActivity final : public Activity {
   uint32_t sessionPaceSampleSeconds = 0;
   uint16_t sessionPaceSampleCount = 0;
   uint32_t sessionReadingSeconds = 0;
+  // Per-page dwell events queued in RAM for KoInsight stats sync; flushed to
+  // the book's pending log in onExit(). Capped at KoInsightEventLog::MAX_EVENTS.
+  std::vector<KoInsightPageEvent> koInsightSessionEvents;
+  bool koInsightQueueFullWarned = false;
   uint16_t lastAutoPageTurnIntervalSeconds = 0;
   bool bookHasCustomReaderSettings = false;
   bool bookHasAutoPageTurnInterval = false;
@@ -340,6 +346,7 @@ class EpubReaderActivity final : public Activity {
   bool forwardPageReadElapsed(uint32_t& seconds, const char* source) const;
   bool currentPageReadingSecondsForStats(uint32_t& seconds, const char* source) const;
   void recordCurrentPageReadingTime(const char* source = "unknown");
+  void queueKoInsightPageEvent(uint32_t seconds, const char* source);
   void recordForwardPagePaceSample(uint32_t seconds, const char* source);
   bool getSessionAveragePaceSeconds(uint16_t& avgSeconds) const;
   void recoverStoredPaceFromSession(const char* reason = "unknown");

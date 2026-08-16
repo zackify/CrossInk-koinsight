@@ -111,6 +111,9 @@ class KOReaderSyncActivity final : public Activity {
   // which makes WiFi.getMode() return WIFI_MODE_NULL.
   bool wifiActivated = false;
   bool lockInitialConfirmRelease = false;
+  // One-shot guard: stats upload is attempted at most once per sync session,
+  // regardless of which progress-sync path succeeded first.
+  bool koInsightAttempted = false;
 
   void onWifiSelectionComplete(bool success);
   void performSync();
@@ -121,6 +124,7 @@ class KOReaderSyncActivity final : public Activity {
   void completeAlreadySynced();
   void ensureEpubLoaded();
   bool ensureLocalProgressLoaded();
+  void uploadKoInsightStats();
   void saveProgressAndReturn(const CrossPointPosition& position);
   void returnToReader();
 };

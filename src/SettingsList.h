@@ -15,6 +15,7 @@
 
 #include "CrossPointSettings.h"
 #include "KOReaderCredentialStore.h"
+#include "KoInsightSettings.h"
 #include "activities/settings/SettingsActivity.h"
 #include "util/Dictionary.h"
 #include "util/DictionaryRegistry.h"
@@ -776,6 +777,23 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
           KOREADER_STORE.saveToFile();
         },
         "koSyncBehavior", StrId::STR_KOREADER_SYNC));
+
+    add(SettingInfo::DynamicEnum(
+        StrId::STR_KOINSIGHT_STATS, {StrId::STR_STATE_OFF, StrId::STR_STATE_ON},
+        [] { return static_cast<uint8_t>(KOINSIGHT_STORE.getEnabled()); },
+        [](uint8_t v) {
+          KOINSIGHT_STORE.setEnabled(v != 0);
+          KOINSIGHT_STORE.saveToFile();
+        },
+        "koInsightStats", StrId::STR_KOREADER_SYNC));
+
+    add(SettingInfo::DynamicString(
+        StrId::STR_KOINSIGHT_URL, [] { return KOINSIGHT_STORE.getServerUrl(); },
+        [](const std::string& v) {
+          KOINSIGHT_STORE.setServerUrl(v);
+          KOINSIGHT_STORE.saveToFile();
+        },
+        "koInsightUrl", StrId::STR_KOREADER_SYNC));
 
     // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
     add(SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,

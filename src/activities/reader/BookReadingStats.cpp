@@ -2,6 +2,7 @@
 
 #include <HalStorage.h>
 #include <I18n.h>
+#include <KoInsightEventLog.h>
 #include <Logging.h>
 
 #include <cstring>
@@ -292,6 +293,11 @@ bool BookReadingStats::remove(const std::string& cachePath) {
   const std::string legacyStatsPath = cachePath + "/" + LEGACY_STATS_FILE_NAME;
   if (Storage.exists(legacyStatsPath.c_str()) && !Storage.remove(legacyStatsPath.c_str())) {
     LOG_ERR("STATS", "Could not delete %s", LEGACY_STATS_FILE_NAME);
+    ok = false;
+  }
+  // Stats reset also discards not-yet-uploaded KoInsight page events;
+  // re-sending them would resurrect deleted history on the server.
+  if (!KoInsightEventLog::remove(cachePath)) {
     ok = false;
   }
   return ok;
