@@ -131,6 +131,131 @@ Project: Open-source e-reader firmware for ESP32-C3 and ESP32-S3 devices.
 - Cache identity is tied to the book path hash; moving or renaming a book creates a different cache.
 - Clear the relevant `.crosspoint/epub_<hash>/` cache when testing EPUB parser, layout, image, or binary cache format changes that may otherwise reuse stale output.
 
+## KoInsight Stats Sync
+
+This fork uploads per-page reading statistics to a self-hosted
+[KoInsight](https://github.com/Ko-Insight/KoInsight) server through its
+KOReader-plugin import API, so CrossInk reading time combines with KOReader in
+the same dashboard. User-facing docs: `docs/koinsight-stats-sync.md`.
+
+### Data flow
+
+1. **Capture** — `EpubReaderActivity::queueKoInsightPageEvent()` records a page
+dwell event in RAM whenever `recordCurrentPageReadingTime()` qualifies a page
+(`currentPageReadingSecondsForStats()` passes; see Filters below).
+2. **Flush** — the RAM buffer is appended to the per-book queue file
+(`<cachePath>/koinsight_pending.bin`) at `KOINSIGHT_SESSION_FLUSH_THRESHOLD`
+(256, keeps RAM ~4KB) and again in `EpubReaderActivity::onExit()`.
+3. **Upload** — `KOReaderSyncActivity::uploadKoInsightStats()` runs after a
+successful progress sync while WiFi is up (all 4 success paths: upload,
+smart-apply, manual apply, already-synced). `KoInsightUpload::syncBookStats()`
+registers the device, then drains the queue in batches (≤64 events/request,
+≤8 batches/run); events are consumed locally only after the server returns 200.
+4. **Reset** — `BookReadingStats::remove()` also deletes the pending queue so a
+stats reset doesn't resurrect deleted history server-side.
+
+### Module map (`lib/KoInsightSync/`)
+
+- `KoInsightSettings` — persisted store at `/.crosspoint/koinsight.json`
+  (`enabled`, `serverUrl`; empty URL falls back to the KOReader sync base URL,
+  because KoInsight also serves the kosync API). `KOINSIGHT_STORE` macro.
+- `KoInsightEventLog` — append-only-in-spirit queue. Records are 16-byte LE
+  (`startTime u32, duration u32, page u32, totalPages u32`) behind an 8-byte
+  header (`KIPQ` + version + reserved). `MAX_EVENTS = 2000` (32KB); on overflow
+  the oldest events are dropped. Codec is header-inline so host tests can build
+  it without HalStorage/Logging.
+- `KoInsightClient` — HTTP via `freeink::SecureHttpClient` + ArduinoJson.
+  `PLUGIN_VERSION` **must equal KoInsight's `REQUIRED_PLUGIN_VERSION`
+  (currently `0.3.0`)** or the server rejects every request with 400 — this is
+  the single most likely breakage when KoInsight upgrades. Device id is
+  `crossink-<mac-hex>` from `esp_efuse_mac_get_default`; never reuse the static
+  kosync `"crossink-device"` id. TLS heap-gated like the KOSync client.
+- `KoInsightUpload` — orchestrator; per-batch `pages` comes from the newest
+  event's `totalPages`. Failures never affect progress sync; the queue survives
+  for the next attempt (server upserts are idempotent).
+
+### Invariants (do not break)
+
+- Books are always keyed by the **binary partial MD5**
+  (`KOReaderDocumentId::calculate`), independent of the kosync document-matching
+  setting, so CrossInk and KOReader rows unify into one KoInsight book. Row
+  uniqueness is per-device: `page_stat (book_md5, device_id, page, start_time)`,
+  `book_device (book_md5, device_id)` — CrossInk rows can never clobber
+  KOReader's.
+- `total_pages` must be the **whole-book** page count, never a spine count:
+  KoInsight's pages-read math is `(1/total_pages) * reference_pages` per event.
+- Uploads are idempotent; consume queue only after a 200. If local consume
+  fails after a successful POST, re-sending is harmless.
+
+### Pagination logic (`queueKoInsightPageEvent`)
+
+- Indexed books (`epub->hasStablePageNumbers()`): `resolveReferencePage()` gives
+  KOReader-style word-count pages — real whole-book `page` + `total_pages`.
+- Unindexed fallback: `total_pages` estimated from the spine's share of the book
+  (`spinePages / (calculateProgress(spine,1) − calculateProgress(spine,0))`) and
+  `page` derived in whole-book coordinates from the same progress fraction
+  (clamped 1..total_pages), so page numbers don't restart per chapter.
+- Both must stay whole-book; never send `section->currentPage + 1` /
+  `section->estimatedTotalPages()` (spine-relative) as the event values.
+
+### Filters
+
+- Dwell `< MIN_KOINSIGHT_PAGE_SECONDS` (10s) is dropped in
+  `queueKoInsightPageEvent` (mirrors the stats panel's "under 10s doesn't count").
+- Dwell `> SETTINGS.getReadingIdleTimeThresholdSeconds()` is already rejected by
+  `currentPageReadingSecondsForStats()` before capture (keep that behavior).
+- Events with an unset clock (`time(nullptr) < 946684800`) are dropped.
+- Only EPUB reading is captured (XTC/TXT readers have their own dwell paths and
+  no sync hook; adding them means recording + a flush path, plus the sync
+  activity currently only accepts `epubPath`).
+
+### Settings UI
+
+- `SettingsList.h` (web settings) + `KOReaderSettingsActivity` (device screen):
+  "KoInsight Stats Sync" toggle + "KoInsight Server URL".
+- The device screen is an index-based menu (`MENU_ITEMS`, `menuNames[]`,
+  `handleSelection`, `buildListScreen`) — when adding/removing rows, keep the
+  indices in sync across all four places.
+- New `STR_*` keys go in `lib/I18n/translations/english.yaml` only;
+  `I18nKeys.h` is regenerated by `scripts/gen_i18n.py` at build time.
+- Settings load at boot in `main.cpp` (both the normal and network-resume
+  paths), alongside `KOREADER_STORE.loadFromFile()`.
+- Pre-provision on the SD card: `/.crosspoint/koinsight.json`
+  (`{"enabled": true, "serverUrl": "http://<host>:3005"}`). A gitignored local
+  copy lives at `provision/sdcard/.crosspoint/koinsight.json` (never commit it).
+
+### Storage gotchas
+
+- `Storage.openFileForWrite` truncates (`O_TRUNC`); there is no append mode, so
+  the queue is read-modify-written. Keep it small and cap reads in
+  `KoInsightEventLog` (`readAll` rejects files > 4x MAX_EVENTS).
+- Per-page SD writes are avoided by buffering in RAM and flushing at the
+  threshold + on exit.
+
+### Verification
+
+- Host unit tests (codec only, no storage): `test/koinsight_event_log/`
+  (gtest, wired into `test/CMakeLists.txt`; run via cmake build of
+  `test/koinsight_event_log/KoInsightEventLogTest`).
+- Live API check: `scripts/koinsight_api_test.sh` posts device registration +
+  import + idempotency + KOReader-unification + version-gate checks to
+  `KOINSIGHT_URL` (default `http://zai:3005`). It writes labeled test rows; the
+  user deletes them.
+- On-device: read past a chapter boundary, run KOReader Sync on the book, check
+  KoInsight for the `crossink-<mac>` device and per-page rows. Serial logs under
+  tag `KNS` show capture, flush, request/response, and drain progress.
+
+### Releases
+
+- `main` on the fork is the release branch. Push a `v*` tag and
+  `.github/workflows/release-fork.yml` builds both firmware variants and
+  attaches them to a release with auto-generated changelog notes, using only
+  the default `GITHUB_TOKEN` (no secrets).
+- Upstream's `.github/workflows/release.yml` (manual dispatch + secret-gated)
+  will not run on the fork; leave it untouched to avoid merge conflicts.
+- Keep the firmware's `PLUGIN_VERSION` in lockstep with the KoInsight server's
+  required version when bumping releases.
+
 ## Git Workflow
 
 - Check `git status --short` before edits and before reporting results. Preserve unrelated user changes.
