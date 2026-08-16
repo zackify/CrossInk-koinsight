@@ -93,6 +93,11 @@ constexpr uint32_t IDLE_SD_FONT_PREWARM_MIN_FREE = 64U * 1024U;
 constexpr uint32_t IDLE_SD_FONT_PREWARM_MIN_MAX_ALLOC = 40U * 1024U;
 constexpr unsigned long MIN_READING_STATS_PAGE_MS = 2000UL;
 constexpr uint32_t MIN_READING_PACE_SAMPLE_SECONDS = 2;
+// KoInsight stats keep only page turns that count as real reading: at least
+// 10s of dwell (mirrors the stats panel's "sessions under 10 seconds don't
+// add to reading time") and at most the reading idle threshold (already
+// enforced in currentPageReadingSecondsForStats).
+constexpr uint32_t MIN_KOINSIGHT_PAGE_SECONDS = 10;
 constexpr uint16_t MIN_STORED_TIME_LEFT_PACE_SAMPLE_COUNT = 3;
 constexpr uint16_t MIN_SESSION_TIME_LEFT_PACE_SAMPLE_COUNT = 10;
 constexpr uint16_t MIN_STORED_PACE_SLOWER_RECOVERY_SESSION_SAMPLES = 10;
@@ -1457,7 +1462,7 @@ void EpubReaderActivity::recordCurrentPageReadingTime(const char* source) {
 // (device never time-synced) are dropped — KoInsight keys stats by start_time,
 // so a bogus epoch would be worse than a gap.
 void EpubReaderActivity::queueKoInsightPageEvent(const uint32_t seconds, const char* source) {
-  if (!KOINSIGHT_STORE.getEnabled() || !epub || !section || seconds == 0) {
+  if (!KOINSIGHT_STORE.getEnabled() || !epub || !section || seconds < MIN_KOINSIGHT_PAGE_SECONDS) {
     return;
   }
   const time_t now = time(nullptr);
@@ -1482,7 +1487,10 @@ void EpubReaderActivity::queueKoInsightPageEvent(const uint32_t seconds, const c
     page = refPage;
     totalPages = refPageCount;
   } else {
-    // Fallback: estimate whole-book pages from this spine's share of the book.
+    // Fallback: estimate whole-book pages from this spine's share of the book
+    // and derive the page number in whole-book coordinates from the same
+    // progress fraction, so `page` tracks the overall book instead of
+    // restarting per chapter.
     const float spineStart = epub->calculateProgress(currentSpineIndex, 0.0f);
     const float spineEnd = epub->calculateProgress(currentSpineIndex, 1.0f);
     const float span = spineEnd - spineStart;
@@ -1491,6 +1499,11 @@ void EpubReaderActivity::queueKoInsightPageEvent(const uint32_t seconds, const c
       if (estimated > 1.0f) {
         totalPages = static_cast<uint32_t>(estimated + 0.5f);
       }
+      const float bookFraction = spineStart + span * readFraction;  // where the read page sits in the book
+      uint32_t bookPage = static_cast<uint32_t>(bookFraction * static_cast<float>(totalPages) + 0.5f);
+      if (bookPage < 1u) bookPage = 1u;
+      if (bookPage > totalPages) bookPage = totalPages;
+      page = bookPage;
     }
   }
 
