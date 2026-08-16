@@ -1,0 +1,95 @@
+name: Build & Attach Firmware Release
+
+# Fork-specific release builder: push a v* tag (or create a GitHub release
+# with a new tag) and this workflow compiles both firmware variants and
+# attaches them to the release. Uses only the default GITHUB_TOKEN — no
+# repository secrets required (unlike upstream's release.yml, which needs
+# RELEASE_PAT + CROSSINK_SIGNING_SSH_KEY and only runs on manual dispatch).
+#
+# Requirements (repo Settings → Actions):
+#   - Workflow permissions: "Read and write permissions"
+#
+# Tag format: v1.5.0 → assets firmware-x3-x4-v1.5.0.bin / firmware-sticky-v1.5.0.bin
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.5.0); tag/release is created for it"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-attach:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'platformio.local.example.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-platformio-
+
+      - name: Install PlatformIO Core
+        run: uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+
+      - name: Resolve release version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          sed -i "/^\[crossink\]$/,/^\[/s/^version = .*/version = $VERSION/" platformio.ini
+
+      - name: Build CrossInk firmware
+        env:
+          CROSSINK_RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: |
+          set -euo pipefail
+          pio run -e default -e sticky | tee pio-release.log
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          ls -la .pio/build/default/firmware-x3-x4-v${RELEASE_VERSION}.bin
+          ls -la .pio/build/sticky/firmware-sticky-v${RELEASE_VERSION}.bin
+          {
+            echo "## Firmware build stats (v$RELEASE_VERSION)"
+            grep -E "RAM:\s|Flash:\s" pio-release.log | while read -r line; do echo "- ${line}"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create release and attach firmware
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.RELEASE_VERSION }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            .pio/build/default/firmware-x3-x4-v${{ env.RELEASE_VERSION }}.bin
+            .pio/build/sticky/firmware-sticky-v${{ env.RELEASE_VERSION }}.bin
